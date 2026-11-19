@@ -1,5 +1,5 @@
 
-const STORAGE_KEY = "usedTickets";
+
 
 let scanner = new Html5Qrcode("reader");
 let scannerRunning = false;
@@ -9,16 +9,28 @@ let processing = false;
 // GESTION DES BILLETS UTILISES
 // ==========================================
 
+const STORAGE_KEY = "usedTickets";
+
+// Récupérer la base de données
 function getUsedTickets() {
+
     return JSON.parse(
-        localStorage.getItem(STORAGE_KEY) || "[]"
+        localStorage.getItem(STORAGE_KEY) || "{}"
     );
 }
 
+// Enregistrer un nouveau billet
 function saveUsedTicket(id) {
+
     const used = getUsedTickets();
 
-    used.push(String(id));
+    // Vérifier une dernière fois qu'il n'existe pas
+    if (used[id]) {
+        return false;
+    }
+
+    // Enregistrer la date et l'heure du scan
+    used[id] = new Date().toISOString();
 
     localStorage.setItem(
         STORAGE_KEY,
@@ -26,12 +38,19 @@ function saveUsedTicket(id) {
     );
 
     updateStatistics();
+
+    return true;
 }
 
+// Mettre à jour les statistiques
 function updateStatistics() {
+
+    const used = getUsedTickets();
+
     document.getElementById("count").textContent =
-        getUsedTickets().length;
+        Object.keys(used).length;
 }
+
 
 // ==========================================
 // VERIFICATION DU HASH
@@ -161,6 +180,7 @@ function displayResult(valid, data, reason = "") {
 // LECTURE DU QR CODE
 // ==========================================
 
+
 async function onScanSuccess(decodedText) {
 
     if (processing) return;
@@ -172,11 +192,16 @@ async function onScanSuccess(decodedText) {
         await scanner.stop();
         scannerRunning = false;
 
+        // Vérifier l'authenticité du QR Code
         const response = await validateQRCode(decodedText);
 
         if (!response.valid) {
 
-            displayResult(false, null, response.reason);
+            displayResult(
+                false,
+                null,
+                response.reason
+            );
 
         } else {
 
@@ -185,19 +210,30 @@ async function onScanSuccess(decodedText) {
 
             const used = getUsedTickets();
 
-            if (used.includes(id)) {
+            // Vérifier si le billet a déjà été utilisé
+            if (used[id]) {
 
-                displayResult(
-                    false,
-                    null,
-                    "Ce billet a déjà été utilisé !"
+                displayAlreadyUsed(
+                    data,
+                    used[id]
                 );
 
             } else {
 
-                saveUsedTicket(id);
+                // Enregistrer le nouveau billet
+                const saved = saveUsedTicket(id);
 
-                displayResult(true, data);
+                if (saved) {
+
+                    displayResult(true, data);
+
+                } else {
+
+                    displayAlreadyUsed(
+                        data,
+                        getUsedTickets()[id]
+                    );
+                }
             }
         }
 
@@ -210,9 +246,33 @@ async function onScanSuccess(decodedText) {
             null,
             "Erreur lors de la vérification"
         );
-
     }
 }
+
+
+function displayAlreadyUsed(data, timestamp) {
+
+    const result = document.getElementById("result");
+
+    result.classList.remove("hidden", "valid", "invalid");
+    result.classList.add("invalid");
+
+    document.getElementById("result-title").textContent =
+        "BILLET DÉJÀ SCANNÉ";
+
+    document.getElementById("result-name").textContent =
+        data["Prénom"] + " " + data["Nom"];
+
+    document.getElementById("result-class").textContent =
+        "Ce participant est déjà entré.";
+
+    const date = new Date(timestamp);
+
+    document.getElementById("result-age").textContent =
+        "Premier scan : " + date.toLocaleString("fr-FR");
+}
+
+
 
 // ==========================================
 // ACTIVATION DE LA CAMERA
